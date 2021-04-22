@@ -1,6 +1,7 @@
 package com.example.demo.models;
 
 import com.amazonaws.services.dynamodbv2.datamodeling.*;
+import com.example.demo.utils.UserTypeTranslator;
 import lombok.*;
 
 @ToString
@@ -17,15 +18,15 @@ public class User {
     public String userID;
 
     @DynamoDBAttribute(attributeName = "email")
-    private String email;
+    public String email;
 
     @DynamoDBAttribute(attributeName = "password")
-    private String password;
+    public String password;
 
     @DynamoDBAttribute(attributeName = "userType")
     @DynamoDBTypeConverted(converter = UserTypeTranslator.class)
-    private UserType userType;
+    public UserType userType;
 
     @DynamoDBAttribute(attributeName = "dailyLimit")
-    private int dailyLimit;
+    public int dailyLimit;
 }

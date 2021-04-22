@@ -1,6 +1,7 @@
-package com.example.demo.models;
+package com.example.demo.utils;
 
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBTypeConverter;
+import com.example.demo.models.UserType;
 
 public class UserTypeTranslator implements DynamoDBTypeConverter<Integer, UserType> {
     @Override

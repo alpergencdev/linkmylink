@@ -15,28 +15,17 @@ import com.amazonaws.services.dynamodbv2.model.*;
 import com.example.demo.models.ShortenedURL;
 import com.example.demo.models.User;
 import com.example.demo.models.UserType;
+import com.example.demo.utils.DatabaseRepository;
 
-import java.util.Arrays;
 
 public class DynamoDBDemo {
     public static void main(String[] args) {
 
-        AmazonDynamoDB client = AmazonDynamoDBClientBuilder.standard()
-                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration("http://localhost:8000", "us-west-2"))
-                .build();
-
-        DynamoDBMapper mapper = new DynamoDBMapper(client);
-        save(mapper);
+        DatabaseRepository dbr = DatabaseRepository.getInstance();
+        dbr.createUserTable();
+        dbr.createURLTable();
     }
 
-    private static void load(DynamoDBMapper mapper) {
-        // Basic load
-        ShortenedURL url = new ShortenedURL();
-        url.setKey("abcde");
-
-        ShortenedURL result = mapper.load(url);
-        System.out.println("url");
-    }
 
     private static void createUserTable(DynamoDBMapper mapper, AmazonDynamoDB client) {
         CreateTableRequest ctr = mapper.generateCreateTableRequest(User.class);
@@ -50,20 +39,4 @@ public class DynamoDBDemo {
         client.createTable(ctr);
     }
 
-    private static void save(DynamoDBMapper mapper) {
-        ShortenedURL url = new ShortenedURL();
-        url.setUrl("google.com");
-        url.setCreationDate("22-04-2020");
-        url.setKey("abcde");
-        url.setCreatorID(1);
-
-        mapper.save(url);
-
-        User u = new User();
-        u.setDailyLimit(5);
-        u.setUserType(UserType.B2C);
-        u.setPassword("abcabc");
-        u.setEmail("asdasd@asdasd.com");
-        mapper.save(u);
-    }
 }
