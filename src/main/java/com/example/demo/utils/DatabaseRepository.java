@@ -7,7 +7,6 @@ import com.amazonaws.client.builder.AwsClientBuilder;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
-import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBQueryExpression;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBScanExpression;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.CreateTableRequest;
@@ -15,11 +14,11 @@ import com.amazonaws.services.dynamodbv2.model.ProvisionedThroughput;
 import com.example.demo.models.ShortenedURL;
 import com.example.demo.models.User;
 import com.example.demo.models.UserType;
-import org.springframework.beans.factory.annotation.Value;
+import org.apache.commons.codec.digest.DigestUtils;
+import org.joda.time.DateTime;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.text.SimpleDateFormat;
+import java.util.*;
 
 public class DatabaseRepository {
 
@@ -32,6 +31,8 @@ public class DatabaseRepository {
     private static String region = "home";
 
     private static DatabaseRepository instance = null;
+
+    private static final long THIRTY_DAYS_IN_MSEC = 30L * 24L * 60L * 60L * 1000L;
 
     private AmazonDynamoDB client;
 
@@ -59,68 +60,214 @@ public class DatabaseRepository {
     }
 
     public String login(String email, String password) {
-        Map<String, AttributeValue> eav = new HashMap<String, AttributeValue>();
-        eav.put(":em", new AttributeValue().withS(email));
-        eav.put(":pw", new AttributeValue().withS(password));
+        try {
+            Map<String, AttributeValue> eav = new HashMap<String, AttributeValue>();
+            String passwordHash = DigestUtils.sha256Hex(password);
+            eav.put(":em", new AttributeValue().withS(email));
+            eav.put(":pw", new AttributeValue().withS(passwordHash));
 
-        DynamoDBScanExpression scanExpression = new DynamoDBScanExpression()
-                .withFilterExpression("email = :em and password = :pw")
-                .withExpressionAttributeValues(eav)
-                .withLimit(1);
+            DynamoDBScanExpression scanExpression = new DynamoDBScanExpression()
+                    .withFilterExpression("email = :em and password = :pw")
+                    .withExpressionAttributeValues(eav)
+                    .withLimit(1);
 
-        List<User> scanResult = mapper.scan(User.class, scanExpression);
-        if(scanResult.isEmpty()) {
+            List<User> scanResult = mapper.scan(User.class, scanExpression);
+            if(scanResult.isEmpty()) {
+                return "INVALID_LOGIN";
+            }
+            else {
+                return scanResult.get(0).getUserID();
+            }
+        } catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
             return null;
-        }
-        else {
-            return scanResult.get(0).getUserID();
         }
     }
 
     public String signUp(String email, String password, UserType userType) {
-        Map<String, AttributeValue> eav = new HashMap<String, AttributeValue>();
-        eav.put(":em", new AttributeValue().withS(email));
+        try {
+            Map<String, AttributeValue> eav = new HashMap<String, AttributeValue>();
+            eav.put(":em", new AttributeValue().withS(email));
 
-        DynamoDBScanExpression scanExpression = new DynamoDBScanExpression()
-                .withFilterExpression("email = :em")
-                .withExpressionAttributeValues(eav)
-                .withLimit(1);
 
-        List<User> scanResult = mapper.scan(User.class, scanExpression);
-        if(!scanResult.isEmpty()) {
+            DynamoDBScanExpression scanExpression = new DynamoDBScanExpression()
+                    .withFilterExpression("email = :em")
+                    .withExpressionAttributeValues(eav)
+                    .withLimit(1);
+
+            List<User> scanResult = mapper.scan(User.class, scanExpression);
+            if(!scanResult.isEmpty()) {
+                return "EMAIL_EXISTS";
+            }
+            else {
+                User u = new User();
+                u.setEmail(email);
+                String passwordHash = DigestUtils.sha256Hex(password);
+                u.setPassword(passwordHash);
+                u.setUserType(userType);
+                switch(userType) {
+                    case B2B:
+                    case ADMIN:
+                        u.setDailyLimit(20);
+                        break;
+                    case B2C:
+                        u.setDailyLimit(5);
+                        break;
+                    default:
+                        u.setDailyLimit(0);
+                }
+
+                mapper.save(u);
+                return u.getUserID();
+            }
+        }
+        catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
             return null;
         }
-        else {
+    }
+
+    public boolean doesKeyExist(String shortKey) {
+        ShortenedURL s = new ShortenedURL();
+        s.setKey(shortKey);
+        s = mapper.load(s);
+        return s != null;
+    }
+
+    public String shortenURL(String shortKey, String url, String userID) {
+        try {
             User u = new User();
-            u.setEmail(email);
-            u.setPassword(password);
-            u.setUserType(userType);
-            switch(userType) {
-                case B2B:
-                case ADMIN:
-                    u.setDailyLimit(20);
-                    break;
-                case B2C:
-                    u.setDailyLimit(5);
-                    break;
-                default:
-                    u.setDailyLimit(0);
+            u.setUserID(userID);
+            u = mapper.load(u);
+
+            if(u.getDailyLimit() <= 0) {
+                return "DAILY_LIMIT_EXCEEDED";
             }
 
+            ShortenedURL s = new ShortenedURL();
+            s.setCreatorID(userID);
+            s.setKey(shortKey);
+            s.setCreationDate(DateTime.now().toString("dd-MM-yyyy"));
+            s.setUrl(url);
+
+            mapper.save(s);
+
+            u.setDailyLimit(u.getDailyLimit() - 1);
             mapper.save(u);
-            return u.getUserID();
+
+            return s.getKey();
+        }
+        catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
+            return null;
         }
     }
 
-    public void createUserTable() {
-        CreateTableRequest ctr = mapper.generateCreateTableRequest(User.class);
-        ctr.setProvisionedThroughput( new ProvisionedThroughput(1L, 1L));
-        client.createTable(ctr);
+    public String getURL(String shortKey) {
+        try {
+            ShortenedURL s = new ShortenedURL();
+            s.setKey(shortKey);
+            s = mapper.load(s);
+            long nowMillis = new Date().getTime();
+            long startMillis = new SimpleDateFormat("dd-MM-yyyy").parse(s.getCreationDate()).getTime();
+            System.out.println(nowMillis - startMillis);
+            System.out.println(THIRTY_DAYS_IN_MSEC);
+            return (s == null) ? "NO_SUCH_URL" : (nowMillis - startMillis >= THIRTY_DAYS_IN_MSEC) ? "URL_EXPIRED" : s.getUrl();
+        } catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
     }
 
-    public void createURLTable() {
-        CreateTableRequest ctr = mapper.generateCreateTableRequest(ShortenedURL.class);
-        ctr.setProvisionedThroughput( new ProvisionedThroughput(1L, 1L));
-        client.createTable(ctr);
+    public List<ShortenedURL> getAllUserURLs(String userID) {
+        try {
+            User u = new User();
+            u.setUserID(userID);
+            u = mapper.load(u);
+
+            if(u == null)
+                return null;
+
+            DynamoDBScanExpression scanExpression;
+
+            if(u.getUserType() == UserType.ADMIN) {
+                scanExpression = new DynamoDBScanExpression();
+            }
+            else {
+                Map<String, AttributeValue> eav = new HashMap<String, AttributeValue>();
+                eav.put(":cid", new AttributeValue().withS(userID));
+
+                scanExpression = new DynamoDBScanExpression()
+                        .withFilterExpression("creatorID = :cid")
+                        .withExpressionAttributeValues(eav);
+            }
+            List<ShortenedURL> scanResult = mapper.scan(ShortenedURL.class, scanExpression);
+
+            List<ShortenedURL> result = new ArrayList<ShortenedURL>();
+
+            for(ShortenedURL su : scanResult) {
+                result.add(su);
+            }
+
+            return result;
+        } catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public boolean refreshDailyLimits() {
+        try {
+            DynamoDBScanExpression scanExpression = new DynamoDBScanExpression();
+
+            List<User> users = mapper.scan(User.class, scanExpression);
+
+            for(User u : users) {
+                if(u.getUserType() == UserType.ADMIN || u.getUserType() == UserType.B2B) {
+                    u.setDailyLimit(20);
+                }
+                else if(u.getUserType() == UserType.B2C) {
+                    u.setDailyLimit(5);
+                }
+                mapper.save(u);
+            }
+
+            return true;
+        } catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean createUserTable() {
+        try {
+            CreateTableRequest ctr = mapper.generateCreateTableRequest(User.class);
+            ctr.setProvisionedThroughput( new ProvisionedThroughput(1L, 1L));
+            client.createTable(ctr);
+            return true;
+        } catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    public boolean createURLTable() {
+        try {
+            CreateTableRequest ctr = mapper.generateCreateTableRequest(ShortenedURL.class);
+            ctr.setProvisionedThroughput( new ProvisionedThroughput(1L, 1L));
+            client.createTable(ctr);
+            return true;
+        } catch (Exception e) {
+            System.out.println("Something went wrong: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
     }
 }

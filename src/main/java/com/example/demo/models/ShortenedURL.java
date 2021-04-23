@@ -21,7 +21,7 @@ public class ShortenedURL {
     private String url;
 
     @DynamoDBAttribute(attributeName = "creatorID")
-    private int creatorID;
+    private String creatorID;
 
     @DynamoDBAttribute(attributeName = "creationDate")
     private String creationDate;
