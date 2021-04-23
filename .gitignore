@@ -32,3 +32,6 @@ build/
 ### VS Code ###
 .vscode/
 
+### User-added files ###
+src/main/java/com/example/demo/utils/AWSKeys.java
+

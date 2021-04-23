@@ -108,6 +108,7 @@ public class DatabaseRepository {
                 String passwordHash = DigestUtils.sha256Hex(password);
                 u.setPassword(passwordHash);
                 u.setUserType(userType);
+                u.setTotalRequests(0);
                 switch(userType) {
                     case B2B:
                     case ADMIN:
@@ -163,10 +164,12 @@ public class DatabaseRepository {
             s.setKey(shortKey);
             s.setCreationDate(DateTime.now().toString("dd-MM-yyyy"));
             s.setUrl(url);
+            s.setVisitTime(0);
 
             mapper.save(s);
 
             u.setDailyLimit(u.getDailyLimit() - 1);
+            u.setTotalRequests(u.getTotalRequests() + 1);
             mapper.save(u);
 
             return s.getKey();
@@ -275,10 +278,89 @@ public class DatabaseRepository {
         }
     }
 
+    public JSONObject getUsageStatistics(String userID) {
+        try {
+            JSONObject object = new JSONObject();
+            long totalRequests = 0;
+            long visitTimeCount = 0L;
+            double averageVisitTime = 0.0; //sum of visitTimes / count of links
+            JSONArray visitList = new JSONArray();
+            User u = new User();
+
+            u.setUserID(userID);
+            u = mapper.load(u);
+            if(u == null){
+                object.put("status", 400);
+                object.put("errorMessage", "NO_SUCH_USER");
+                return object;
+            }
+            DynamoDBScanExpression scanExpression;
+            if(u.getUserType() == UserType.ADMIN){
+                scanExpression = new DynamoDBScanExpression();
+                List<ShortenedURL> scanResult = mapper.scan(ShortenedURL.class, scanExpression);
+
+                for(ShortenedURL su : scanResult) {
+                    totalRequests++;
+                    visitTimeCount += su.getVisitTime();
+                    JSONObject cur = new JSONObject();
+                    cur.put("key", su.getKey());
+                    cur.put("visitTime", su.getVisitTime());
+                    visitList.add(cur);
+                }
+
+                if(totalRequests <= 0) {
+                    averageVisitTime = 0.0;
+                }
+                else {
+                    averageVisitTime = visitTimeCount * 1.0 / totalRequests;
+                }
+            }
+            else{
+                totalRequests = u.getTotalRequests();
+                Map<String, AttributeValue> eav = new HashMap<String, AttributeValue>();
+                eav.put(":cid", new AttributeValue().withS(userID));
+
+                scanExpression = new DynamoDBScanExpression()
+                        .withFilterExpression("creatorID = :cid")
+                        .withExpressionAttributeValues(eav);
+
+                List<ShortenedURL> scanResult = mapper.scan(ShortenedURL.class, scanExpression);
+
+                for(ShortenedURL su : scanResult) {
+                    visitTimeCount += su.getVisitTime();
+                    JSONObject cur = new JSONObject();
+                    cur.put("key", su.getKey());
+                    cur.put("visitTime", su.getVisitTime());
+                    visitList.add(cur);
+
+                }
+
+                if(totalRequests <= 0) {
+                    averageVisitTime = 0.0;
+                }
+                else {
+                    averageVisitTime = visitTimeCount * 1.0 / totalRequests;
+                }
+            }
+
+            object.put("status", 200);
+            object.put("totalRequests", totalRequests);
+            object.put("averageVisitTime", averageVisitTime);
+            object.put("individualVisits", visitList);
+
+            return object;
+        } catch (Exception e) {
+            JSONObject object = new JSONObject();
+            object.put("status", 500);
+            object.put("errorMessage", "INTERNAL_SERVER_ERROR");
+            return object;
+        }
+    }
+
     public boolean createUserTable() {
         try {
             CreateTableRequest ctr = mapper.generateCreateTableRequest(User.class);
-            ctr.setProvisionedThroughput( new ProvisionedThroughput(1L, 1L));
+            ctr.setProvisionedThroughput( new ProvisionedThroughput(12L, 12L));
             client.createTable(ctr);
             return true;
         } catch (Exception e) {
@@ -291,7 +373,7 @@ public class DatabaseRepository {
     public boolean createURLTable() {
         try {
             CreateTableRequest ctr = mapper.generateCreateTableRequest(ShortenedURL.class);
-            ctr.setProvisionedThroughput( new ProvisionedThroughput(1L, 1L));
+            ctr.setProvisionedThroughput( new ProvisionedThroughput(13L, 13L));
             client.createTable(ctr);
             return true;
         } catch (Exception e) {
