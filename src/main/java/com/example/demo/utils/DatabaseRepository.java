@@ -3,7 +3,7 @@ package com.example.demo.utils;
 import com.amazonaws.auth.AWSCredentialsProvider;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
-import com.amazonaws.client.builder.AwsClientBuilder;
+import com.amazonaws.regions.Regions;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDB;
 import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClientBuilder;
 import com.amazonaws.services.dynamodbv2.datamodeling.DynamoDBMapper;
@@ -22,13 +22,9 @@ import java.util.*;
 
 public class DatabaseRepository {
 
-    private static String endpoint = "http://localhost:8000/";
+    private static String accessKey = AWSKeys.ACCESS_KEY;
 
-    private static String accessKey = "cs443acckey";
-
-    private static String secretKey = "cs443seckey";
-
-    private static String region = "home";
+    private static String secretKey = AWSKeys.SECRET_KEY;
 
     private static DatabaseRepository instance = null;
 
@@ -45,7 +41,7 @@ public class DatabaseRepository {
 
         client = AmazonDynamoDBClientBuilder.standard()
                 .withCredentials(creds)
-                .withEndpointConfiguration(new AwsClientBuilder.EndpointConfiguration(endpoint, region))
+                .withRegion(Regions.EU_CENTRAL_1)
                 .build();
 
         mapper = new DynamoDBMapper(client);
