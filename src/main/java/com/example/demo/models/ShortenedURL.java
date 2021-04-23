@@ -26,4 +26,7 @@ public class ShortenedURL {
     @DynamoDBAttribute(attributeName = "creationDate")
     private String creationDate;
 
+    @DynamoDBAttribute(attributeName = "visitTime")
+    private int visitTime;
+
 }

@@ -29,4 +29,7 @@ public class User {
 
     @DynamoDBAttribute(attributeName = "dailyLimit")
     public int dailyLimit;
+
+    @DynamoDBAttribute(attributeName = "totalRequests")
+    public int totalRequests;
 }

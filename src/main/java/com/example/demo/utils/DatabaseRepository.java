@@ -16,10 +16,16 @@ import com.example.demo.models.User;
 import com.example.demo.models.UserType;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.joda.time.DateTime;
+import org.json.simple.JSONArray;
+import org.json.simple.JSONValue;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
 
 import java.text.SimpleDateFormat;
 import java.util.*;
 
+import org.json.simple.JSONObject;
+@Component
 public class DatabaseRepository {
 
     private static String accessKey = AWSKeys.ACCESS_KEY;
@@ -125,6 +131,13 @@ public class DatabaseRepository {
         }
     }
 
+    public boolean doesUserExist(String userID) {
+        User u = new User();
+        u.setUserID(userID);
+        u = mapper.load(u);
+        return u != null;
+    }
+
     public boolean doesKeyExist(String shortKey) {
         ShortenedURL s = new ShortenedURL();
         s.setKey(shortKey);
@@ -135,9 +148,12 @@ public class DatabaseRepository {
     public String shortenURL(String shortKey, String url, String userID) {
         try {
             User u = new User();
+
             u.setUserID(userID);
             u = mapper.load(u);
-
+            if(u == null){
+                return "NO_SUCH_USER";
+            }
             if(u.getDailyLimit() <= 0) {
                 return "DAILY_LIMIT_EXCEEDED";
             }
@@ -181,6 +197,7 @@ public class DatabaseRepository {
 
     public List<ShortenedURL> getAllUserURLs(String userID) {
         try {
+
             User u = new User();
             u.setUserID(userID);
             u = mapper.load(u);
@@ -216,7 +233,24 @@ public class DatabaseRepository {
             return null;
         }
     }
-
+    public Boolean incrementVisit(String shortenedURL){
+        try {
+            ShortenedURL url = new ShortenedURL();
+            url.setKey(shortenedURL);
+            url = mapper.load(url);
+            if( url == null) {
+                return false;
+            }
+            url.setVisitTime(url.getVisitTime() + 1);
+            mapper.save(url);
+            return true;
+        } catch (Exception e) {
+            System.out.println("An error has occurred: " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        }
+    }
+    @Scheduled(cron = "0 0 5 * * *", zone = "Europe/Istanbul")
     public boolean refreshDailyLimits() {
         try {
             DynamoDBScanExpression scanExpression = new DynamoDBScanExpression();
