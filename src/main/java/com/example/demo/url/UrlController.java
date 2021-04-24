@@ -106,6 +106,7 @@ public class UrlController {
             cur.put("url", url.getUrl());
             cur.put("creationDate", url.getCreationDate());
             cur.put("visitTime", url.getVisitTime());
+            results.add(cur);
         }
         JSONObject o = new JSONObject();
         o.put("status", 200);
