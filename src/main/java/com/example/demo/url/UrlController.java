@@ -2,14 +2,12 @@ package com.example.demo.url;
 
 import com.example.demo.models.ShortenedURL;
 import com.example.demo.utils.DatabaseRepository;
+import org.json.simple.JSONObject;
+import org.json.simple.JSONArray;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.servlet.function.EntityResponse;
 
 import java.net.URL;
-import java.util.*;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.List;
@@ -28,7 +26,7 @@ public class UrlController {
         this.databaseRepository = databaseRepository;
     }
     @PostMapping(path="/links")
-    public ResponseEntity<String> shortenURL( @RequestParam String userID, @RequestParam String url,HttpServletResponse response ) throws IOException {
+    public JSONObject shortenURL( @RequestParam String userID, @RequestParam String url, @RequestParam(required = false) String customKey) {
 
         try {
             URL u = new URL(url);
@@ -38,90 +36,117 @@ public class UrlController {
         catch( Exception e){
             url = "https://" + url;
         }
-        String shortLink = urlService.createShortLink();
+        String shortLink;
+        if(customKey == null) {
+            shortLink = urlService.createShortLink();
+        }
+        else {
+            if(!customKey.matches("[a-zA-Z0-9]+")) {
+                JSONObject o = new JSONObject();
+                o.put("status", 400);
+                o.put("message", "The specified custom link must be alphanumeric.");
+                return o;
+            }
+            else if ( databaseRepository.doesKeyExist(customKey)) {
+                JSONObject o = new JSONObject();
+                o.put("status", 400);
+                o.put("message", "The specified custom link already exists in the database.");
+                return o;
+            }
+            else {
+                shortLink = customKey;
+            }
+        }
         String result = databaseRepository.shortenURL(shortLink, url, userID);
         System.out.println(result);
         if(result == null){
-            return new ResponseEntity<String>(
-                "A server error has occurred.",
-                HttpStatus.INTERNAL_SERVER_ERROR
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 500);
+            o.put("message", "A server error has occurred.");
+            return o;
         }
         else if(result.equals("DAILY_LIMIT_EXCEEDED")){
-            return new ResponseEntity<String>(
-                    "You have fulfilled your daily limit.",
-                    HttpStatus.BAD_REQUEST
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 400);
+            o.put("message", "You have exceeded your daily limit.");
+            return o;
         }
         else if(result.equals("NO_SUCH_USER")){
-            return new ResponseEntity<String>(
-                    "No user found with given credentials.",
-                    HttpStatus.BAD_REQUEST
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 400);
+            o.put("message", "There is no user with the specified ID.");
+            return o;
         }
-        return new ResponseEntity<String>(
-                result,
-                HttpStatus.CREATED
-        );
+        JSONObject o = new JSONObject();
+        o.put("status", 200);
+        o.put("urlKey", result);
+        return o;
 
     }
 
     @GetMapping(path="/links")
-    public ResponseEntity<String> getLinks(@RequestParam String userID, HttpServletResponse response){
+    public JSONObject getLinks(@RequestParam String userID){
         List<ShortenedURL> urlsOfUser = databaseRepository.getAllUserURLs(userID);
         if(!databaseRepository.doesUserExist(userID)){
-            return new ResponseEntity<String>(
-                    "No such user exists.",
-                    HttpStatus.BAD_REQUEST
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 400);
+            o.put("message", "There is no user with the specified ID.");
+            return o;
         }
         if(urlsOfUser == null){
-            return new ResponseEntity<String>(
-                    "A server error has occurred.",
-                    HttpStatus.INTERNAL_SERVER_ERROR
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 500);
+            o.put("message", "A server error has occurred.");
+            return o;
         }
-        String results = "";
+        JSONArray results = new JSONArray();
         for(var url : urlsOfUser){
-            results = results + url.toString() + "\n";
+            JSONObject cur = new JSONObject();
+            cur.put("key", url.getKey());
+            cur.put("url", url.getUrl());
+            cur.put("creationDate", url.getCreationDate());
+            cur.put("visitTime", url.getVisitTime());
         }
-        return new ResponseEntity<String>(
-                results,
-                HttpStatus.OK
-        );
+        JSONObject o = new JSONObject();
+        o.put("status", 200);
+        o.put("keys", results);
+        return o;
     }
 
     @GetMapping(path = "/{shortURL}")
-    public ResponseEntity<String> redirect(@PathVariable String shortURL, HttpServletResponse response) throws IOException {
+    public JSONObject redirect(@PathVariable String shortURL, HttpServletResponse response) throws IOException {
         if(!databaseRepository.doesKeyExist(shortURL)) {
-            return new ResponseEntity<String>(
-                    "No such user exists.",
-                    HttpStatus.BAD_REQUEST
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 400);
+            o.put("message", "No such URL exists.");
+            return o;
         }
         String result = databaseRepository.getURL(shortURL);
 
         if(result == null) {
-            return new ResponseEntity<String>(
-                    "A server error has occurred.",
-                    HttpStatus.INTERNAL_SERVER_ERROR
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 500);
+            o.put("message", "A server error has occurred.");
+            return o;
         }
         if(result.equals("NO_SUCH_URL")) {
-            return new ResponseEntity<String>(
-                    "No such URL exists.",
-                    HttpStatus.BAD_REQUEST
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 400);
+            o.put("message", "No such URL exists.");
+            return o;
         }
         else if(result.equals("URL_EXPIRED")) {
-            return new ResponseEntity<String>(
-                    "This URL has expired.",
-                    HttpStatus.BAD_REQUEST
-            );
+            JSONObject o = new JSONObject();
+            o.put("status", 400);
+            o.put("message", "This URL has expired.");
+            return o;
         }
         databaseRepository.incrementVisit(shortURL); //increment the visited time
         response.sendRedirect(result);
-        return null;
+        JSONObject o = new JSONObject();
+        o.put("status", 200);
+        o.put("url", result);
+        return o;
     }
 
 
